@@ -24,13 +24,13 @@ Card* createDeck();
 Card getFromDeck(Card* deck, int index, int length);
 void addToDeck(Card* deck, Card c, int length);
 char* cardToString(Card c);
+int handValue(Card* croupier, Card* hand);
 
 Player newPlayer(Player* players, int nbPlayers);
 
 int main(int argc, char** argv) {
 
-	Player* players = NULL;
-	int i = 0, nbPlayers;
+	int i = 0, nbPlayers = 0;
 	srand(time(NULL));
 
 	if(argc < 3) {
@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
 	/* Serveur : appel BIND */
 		bzero(&mes_coord, sizeof(mes_coord));
 		mes_coord.sin_family = AF_INET;
-		mes_coord.sin_port = htons(2125);
+		mes_coord.sin_port = htons(2000);
 		mes_coord.sin_addr.s_addr = htonl(INADDR_ANY);
 		if(bind(sockserveur, (struct sockaddr*) &mes_coord, sizeof(mes_coord)) < 0) {
 			printf("Erreur BIND\n");
@@ -56,6 +56,8 @@ int main(int argc, char** argv) {
 			printf("Erreur LISTEN\n");
 			exit(0);
 		}
+
+		Player* players = NULL;
 
 		int remainingCards = 52;
 		Card* deck = createDeck();
@@ -68,17 +70,16 @@ int main(int argc, char** argv) {
 		/* Serveur : appel ACCEPT */
 		while(1) {
 			lg = sizeof(coord_client);
-			newsockfd = accept(sockserveur, (struct sockaddr*) &coord_client, &lg);
-			if(newsockfd == (-1))
-			{
+
+			Player p = newPlayer(players, nbPlayers);
+			p.budget = 100;
+			p.hand = (Card*) malloc(sizeof(Card) * 2);
+			p.address = accept(sockserveur, (struct sockaddr*) &coord_client, &lg);
+			if(p.address == (-1)) {
 				printf("Erreur ACCEPT\n");
 				exit(0);
 			}
 
-			Player p = newPlayer(players, nbPlayers);
-			p.address = newsockfd;
-			p.budget = 100;
-			p.hand = (Card*) malloc(sizeof(Card) * 2);
 			nbPlayers++;
 			int hand[2];
 			for(i = 0; i < 2; i++) {
@@ -87,36 +88,94 @@ int main(int argc, char** argv) {
 				remainingCards--;
 			}
 
-			char msg2[100] = "Votre main : \n";
-			strcat(msg2, cardToString(p.hand[0]));
-			strcat(msg2, " - ");
-			strcat(msg2, cardToString(p.hand[1]));
-			write(p.address, msg2, sizeof(msg2));
-
-			
+			char msg_srv1[100] = "Votre main : \n";
+			strcat(msg_srv1, cardToString(p.hand[0]));
+			strcat(msg_srv1, " - ");
+			strcat(msg_srv1, cardToString(p.hand[1]));
+			write(p.address, msg_srv1, sizeof(msg_srv1));
 
 			sleep(1);
-			strcpy(msg2, "La main du croupier : \0");
-			strcat(msg2, "\n\t 1ère carte : ");
-			strcat(msg2, cardToString(croupier[0]));
-			strcat(msg2, "\nMiser (1) ou Arrêter (2)");
-			write(p.address, msg2, sizeof(msg2));
-			
-			//msg2[0] = '\0';
-			char msg3[100];
-			read(p.address, msg3, 1);
-			printf("%s\n", msg3);
-			//int result = (int) strtol(msg2, (char **) NULL, 10);
-			//printf("Réponse : %d", result);
+			char msg_srv2[100] = "La main du croupier : \n";
+			strcat(msg_srv2, "\t 1ère carte : ");
+			strcat(msg_srv2, cardToString(croupier[0]));
+			strcat(msg_srv2, "\nMiser (1) ou Arrêter (2)");
+			write(p.address, msg_srv2, sizeof(msg_srv2));
 
-			close(newsockfd);
+			char msg_srv3[100];
+			read(p.address, msg_srv3, sizeof(msg_srv3));
+			if(strcmp(msg_srv3, "2") == 0) {
+				free(deck);
+				free(croupier);
+				free(players);
+				close(p.address);
+				close(sockserveur);
+				exit(EXIT_SUCCESS);
+			}
+
+			char msg_srv4[100] = "";
+			strcat(msg_srv4, "\t 2è carte : ");
+			strcat(msg_srv4, cardToString(croupier[1]));
+			strcat(msg_srv4, "\nMiser (1) ou Arrêter (2)");
+			write(p.address, msg_srv4, sizeof(msg_srv4));
+
+			char msg_srv5[100];
+			read(p.address, msg_srv5, sizeof(msg_srv5));
+			if(strcmp("2", msg_srv5) == 0) {
+				free(deck);
+				free(croupier);
+				free(players);
+				close(p.address);
+				close(sockserveur);
+				exit(EXIT_SUCCESS);
+			}
+
+			char msg_srv6[100] = "";
+			strcat(msg_srv6, "\t 3è carte : ");
+			strcat(msg_srv6, cardToString(croupier[2]));
+			strcat(msg_srv6, "\nMiser (1) ou Arrêter (2)");
+			write(p.address, msg_srv6, sizeof(msg_srv6));
+
+			char msg_srv7[100];
+			read(p.address, msg_srv7, sizeof(msg_srv7));
+			if(strcmp("2", msg_srv7) == 0) {
+				free(deck);
+				free(croupier);
+				free(players);
+				close(p.address);
+				close(sockserveur);
+				exit(EXIT_SUCCESS);
+			}
+
+			char msg_srv8[100] = "Votre meilleure combinaison : ";
+			int v = handValue(croupier, p.hand);
+			switch(v) {
+				case 1:
+					strcat(msg_srv8, "pair");
+					break;
+				case 2:
+					strcat(msg_srv8, "double pair");
+					break;
+				case 3:
+					strcat(msg_srv8, "brelan");
+					break;
+				case 4:
+					strcat(msg_srv8, "couleur");
+					break;
+				default:
+					strcat(msg_srv8, " rien...");
+					break;
+			}
+			write(p.address, msg_srv8, sizeof(msg_srv8));
+
+			close(p.address);
 		}
 		free(deck);
 		free(croupier);
+		free(players);
 		close(sockserveur);
-		
+
 	} else {
-		
+
 		struct sockaddr_in coord_serveur;
 		int sockclient;
 		struct tm *m;
@@ -126,31 +185,71 @@ int main(int argc, char** argv) {
 
 		port = atoi(argv[2]);
 		sockclient = socket(AF_INET, SOCK_STREAM, 0);
-		bzero(&coord_serveur,sizeof(coord_serveur));
+		bzero(&coord_serveur, sizeof(coord_serveur));
 		coord_serveur.sin_family = AF_INET;
 		coord_serveur.sin_port = htons(port);
 		coord_serveur.sin_addr.s_addr = inet_addr(argv[1]);
-		if(connect(sockclient, (struct sockaddr *) &coord_serveur, sizeof(coord_serveur)) <0) 
-		{ 
-			printf ("erreur de connexion \n");
-			exit(0);
+		if(connect(sockclient, (struct sockaddr *) &coord_serveur, sizeof(coord_serveur)) < 0) {
+			printf ("Erreur connect\n");
+			exit(EXIT_SUCCESS);
 		}
 
-		char msg2[100];
-		read(sockclient, msg2, sizeof(msg2));
-		printf("%s\n", msg2);
-		
+		char msg_cl1[100];
+		read(sockclient, msg_cl1, sizeof(msg_cl1));
+		printf("%s\n", msg_cl1);
 
-		read(sockclient, msg2, sizeof(msg2));
-		printf("%s\n", msg2);
+		char msg_cl2[100];
+		read(sockclient, msg_cl2, sizeof(msg_cl2));
+		printf("%s\n", msg_cl2);
 
+		char msg_cl3[100];
 		int input = 0;
 		while(input != 1 && input != 2) {
 			scanf("%d", &input);
+			if(input == 2) {
+				close(sockclient);
+				exit(EXIT_SUCCESS);
+			}
 		}
-		sprintf(msg2, "%d", input);
-		write(sockclient, msg2, sizeof(msg2));
-	
+		sprintf(msg_cl3, "%d", input);
+		write(sockclient, msg_cl3, sizeof(msg_cl3));
+
+		char msg_cl4[100];
+		read(sockclient, msg_cl4, sizeof(msg_cl4));
+		printf("%s\n", msg_cl4);
+
+		char msg_cl5[100];
+		input = 0;
+		while(input != 1 && input != 2) {
+			scanf("%d", &input);
+			if(input == 2) {
+				close(sockclient);
+				exit(EXIT_SUCCESS);
+			}
+		}
+		sprintf(msg_cl5, "%d", input);
+		write(sockclient, msg_cl5, sizeof(msg_cl5));
+
+		char msg_cl6[100];
+		read(sockclient, msg_cl6, sizeof(msg_cl6));
+		printf("%s\n", msg_cl6);
+
+		char msg_cl7[100];
+		input = 0;
+		while(input != 1 && input != 2) {
+			scanf("%d", &input);
+			if(input == 2) {
+				close(sockclient);
+				exit(EXIT_SUCCESS);
+			}
+		}
+		sprintf(msg_cl7, "%d", input);
+		write(sockclient, msg_cl7, sizeof(msg_cl7));
+
+		char msg_cl9[100];
+		read(sockclient, msg_cl9, sizeof(msg_cl9));
+		printf("%s\n", msg_cl9);
+
 		close(sockclient);
 	}
 
@@ -160,7 +259,7 @@ int main(int argc, char** argv) {
 char* cardToString(Card c) {
 	char* result = malloc(sizeof(char) * 100);
 	char val[10];
-	
+
 	switch(c.val) {
 		case 1:
 		strcat(result, "As");
@@ -278,27 +377,33 @@ void addToDeck(Card* deck, Card c, int length) {
 
 Card* higherHand(Card* croupier, Card** hands, int nbHands) {
 	Card* result = NULL;
-	int i = 0, higher = 0;
+	int i = 0, higher = 0, current = 0;
+
 	for(i = 0; i < nbHands; i++) {
-		if(flush(croupier, hands[i])) {
-			higher = 4;
-			result = hands[i];
-		}
-		if(higher < 3 && threeOfKind(croupier, hands[i])) {
-			higher = 3;
-			result = hands[i];
-		}
-		if(higher < 2 && twoPair(croupier, hands[i])) {
-			higher = 2;
-			result = hands[i];
-		}
-		if(higher < 1 && pair(croupier, hands[i])) {
-			higher = 1;
+		current = handValue(croupier, hands[i]);
+		if(higher < current) {
+			higher = current;
 			result = hands[i];
 		}
 	}
-	printf("\nHigher -> %d\n", higher);
 	return result;
+}
+
+int handValue(Card* croupier, Card* hand) {
+	int higher = 0;
+	if(flush(croupier, hand)) {
+		higher = 4;
+	}
+	if(higher < 3 && threeOfKind(croupier, hand)) {
+		higher = 3;
+	}
+	if(higher < 2 && twoPair(croupier, hand)) {
+		higher = 2;
+	}
+	if(higher < 1 && pair(croupier, hand)) {
+		higher = 1;
+	}
+	return higher;
 }
 
 bool pair(Card* croupier, Card* hand) {
